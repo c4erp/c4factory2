@@ -1,0 +1,330 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║              PRODUCTION LIST MODULE - COMPLETE INSTALLATION GUIDE            ║
+║                         C4Factory Manufacturing System                       ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📋 WHAT THIS MODULE DOES
+═══════════════════════════════════════════════════════════════════════════════
+
+This implements a complete manufacturing workflow that solves these problems:
+
+✅ Work Order Items can be EDITED before submit (not locked to BOM)
+✅ Production List created from Work Order with BALANCE quantity tracking
+✅ Stock Entries created from Production List (NOT from BOM directly)
+✅ PARTIAL Stock Entries supported (transfer materials in batches)
+✅ AUTO STATUS updates (Open → In Progress → Completed)
+✅ Balance tracking (what's required vs what's already transferred)
+
+📊 WORKFLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CREATE WORK ORDER
+   └─→ Edit required_items if needed (add/remove/change quantities)
+   └─→ Submit Work Order
+
+2. CREATE PRODUCTION LIST from Work Order
+   └─→ Shows BALANCE quantities (Required - Already Transferred)
+   └─→ Select which items to include (partial or all)
+   └─→ Submit Production List
+   └─→ Status: "Open"
+
+3. CREATE STOCK ENTRY from Production List  
+   └─→ Transfer materials based on PL items (NOT BOM)
+   └─→ Can transfer PARTIAL quantities
+   └─→ Submit Stock Entry
+   └─→ Production List auto-updates: "In Progress"
+
+4. REPEAT Step 3 until all items transferred
+   └─→ When balance = 0, Production List status = "Completed"
+
+5. CREATE MANUFACTURE Stock Entry
+   └─→ Finish production and move to FG Warehouse
+
+
+🚀 INSTALLATION STEPS
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: RUN THE AUTO-GENERATOR SCRIPT
+──────────────────────────────────────────────────────────────────────────────
+
+The file "generate_all_files.py" has been created in your project root.
+This script will automatically create ALL necessary files.
+
+Open Command Prompt or PowerShell and run:
+
+cd d:\C4erp-APP\c4factory2
+python generate_all_files.py
+
+This will create:
+  ✓ 2 DocTypes (Production List + Production List Item)
+  ✓ Python controllers with full logic
+  ✓ API methods for creating PL and Stock Entries
+  ✓ Hooks for auto-status updates
+  ✓ Custom field patch for Stock Entry
+  ✓ 10+ files total
+
+
+STEP 2: UPDATE HOOKS.PY
+──────────────────────────────────────────────────────────────────────────────
+
+The hooks.py file has ALREADY BEEN UPDATED with:
+  ✓ Production List hooks added to Stock Entry events
+  ✓ Custom field patch added to patches list
+
+No manual action needed - already done!
+
+
+STEP 3: RUN DATABASE MIGRATION
+──────────────────────────────────────────────────────────────────────────────
+
+Navigate to your bench directory and run:
+
+cd /path/to/your/bench
+bench --site [your-site-name] migrate
+
+This will:
+  ✓ Create Production List doctype in database
+  ✓ Create Production List Item doctype
+  ✓ Add 'production_list' custom field to Stock Entry
+  ✓ Run all patches
+
+
+STEP 4: RESTART BENCH
+──────────────────────────────────────────────────────────────────────────────
+
+bench restart
+
+Or if using supervisor:
+
+sudo supervisorctl restart all
+
+
+STEP 5: CLEAR CACHE
+──────────────────────────────────────────────────────────────────────────────
+
+bench --site [your-site-name] clear-cache
+
+
+🧪 TESTING THE WORKFLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 1: Create Work Order
+─────────────────────────────────────────────────────────────────────────────
+
+1. Go to Manufacturing → Work Order → New
+2. Select Item and BOM
+3. Set Quantity
+4. Before Submit: You can edit "Required Items" table
+   - Add new items
+   - Remove items
+   - Change quantities
+5. Submit Work Order
+
+
+TEST 2: Create Production List
+─────────────────────────────────────────────────────────────────────────────
+
+1. Open the Work Order you just created
+2. Click Actions → Create → Production List
+   (You need to add this button via Customize Form or use API directly)
+3. Or use Python console in Frappe:
+
+   frappe.call({
+       method: "c4factory.c4_manufacturing.doctype.production_list.production_list.create_production_list_from_work_order",
+       args: {
+           work_order: "MFG-WO-2025-00001"  // Your WO name
+       },
+       callback: function(r) {
+           frappe.set_route("Form", "Production List", r.message.name);
+       }
+   });
+
+4. Review items with balance quantities
+5. Submit Production List
+6. Status should be "Open"
+
+
+TEST 3: Create Stock Entry from Production List
+─────────────────────────────────────────────────────────────────────────────
+
+1. Open the Production List
+2. Use Python console:
+
+   frappe.call({
+       method: "c4factory.api.production_list_stock.make_stock_entry_from_production_list",
+       args: {
+           production_list: "PL-2025-00001"  // Your PL name
+       },
+       callback: function(r) {
+           var se = frappe.model.sync(r.message);
+           frappe.set_route("Form", "Stock Entry", se[0].name);
+       }
+   });
+
+3. Review Stock Entry (items from PL, not BOM)
+4. Submit Stock Entry
+5. Go back to Production List
+6. Status should now be "In Progress"
+7. transferred_qty updated, balance_qty reduced
+
+
+TEST 4: Partial Transfer
+─────────────────────────────────────────────────────────────────────────────
+
+Repeat TEST 3 with partial quantities:
+
+frappe.call({
+    method: "c4factory.api.production_list_stock.make_stock_entry_from_production_list",
+    args: {
+        production_list: "PL-2025-00001",
+        qty_dict: {"ITEM-001": 5, "ITEM-002": 3}  // Partial quantities
+    },
+    callback: function(r) {
+        var se = frappe.model.sync(r.message);
+        frappe.set_route("Form", "Stock Entry", se[0].name);
+    }
+});
+
+
+TEST 5: Complete Production List
+─────────────────────────────────────────────────────────────────────────────
+
+Continue creating Stock Entries until all balance_qty = 0
+Production List status should automatically change to "Completed"
+
+
+📁 FILES CREATED
+═══════════════════════════════════════════════════════════════════════════════
+
+c4factory/
+├── c4_manufacturing/
+│   ├── doctype/
+│   │   ├── __init__.py
+│   │   ├── production_list/
+│   │   │   ├── __init__.py
+│   │   │   ├── production_list.json          (DocType definition)
+│   │   │   ├── production_list.py            (Controller with full logic)
+│   │   │   └── test_production_list.py
+│   │   └── production_list_item/
+│   │       ├── __init__.py
+│   │       ├── production_list_item.json     (Child table definition)
+│   │       ├── production_list_item.py
+│   │       └── test_production_list_item.py
+│   └── production_list_hooks.py              (Event handlers)
+├── api/
+│   ├── __init__.py
+│   └── production_list_stock.py              (Stock Entry creation API)
+└── patches/
+    └── v1_0/
+        └── setup_stock_entry_custom_fields.py (Adds production_list field)
+
+
+🔧 API METHODS AVAILABLE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. create_production_list_from_work_order(work_order, items=None)
+   - Creates PL from WO with balance quantities
+   - Args: work_order (str), items (optional list of item codes)
+
+2. make_stock_entry_from_production_list(production_list, qty_dict=None)
+   - Creates Stock Entry from PL (not BOM)
+   - Args: production_list (str), qty_dict (optional {item: qty})
+
+3. get_production_list_items_with_balance(production_list)
+   - Returns items that still have balance > 0
+   - Args: production_list (str)
+
+4. production_list.update_transferred_qty()
+   - Recalculates transferred quantities from Stock Entries
+   - Auto-updates status
+
+
+🎨 CUSTOMIZATION OPTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+ADD BUTTONS TO WORK ORDER:
+─────────────────────────────────────────────────────────────────────────────
+
+1. Go to: Customize Form → Work Order
+2. Add Custom Button:
+   - Label: "Create Production List"
+   - Action: Run this JS:
+
+   frappe.call({
+       method: "c4factory.c4_manufacturing.doctype.production_list.production_list.create_production_list_from_work_order",
+       args: { work_order: cur_frm.doc.name },
+       callback: function(r) {
+           frappe.model.sync(r.message);
+           frappe.set_route("Form", "Production List", r.message.name);
+       }
+   });
+
+
+ADD BUTTONS TO PRODUCTION LIST:
+─────────────────────────────────────────────────────────────────────────────
+
+1. Go to: Customize Form → Production List
+2. Add Custom Button:
+   - Label: "Create Stock Entry"
+   - Action: Run this JS:
+
+   frappe.call({
+       method: "c4factory.api.production_list_stock.make_stock_entry_from_production_list",
+       args: { production_list: cur_frm.doc.name },
+       callback: function(r) {
+           var se = frappe.model.sync(r.message);
+           frappe.set_route("Form", "Stock Entry", se[0].name);
+       }
+   });
+
+
+📚 TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+ISSUE: "Module C4 Manufacturing not found"
+SOLUTION: Run: bench --site [site] migrate
+
+ISSUE: "ProductionList not found"
+SOLUTION: Clear cache: bench --site [site] clear-cache
+
+ISSUE: "production_list field not found in Stock Entry"
+SOLUTION: Run migrate again, check patches executed
+
+ISSUE: Status not updating automatically
+SOLUTION: Check hooks.py has production_list_hooks in Stock Entry events
+
+ISSUE: Can't create Stock Entry from PL
+SOLUTION: Ensure PL is submitted (docstatus = 1)
+
+
+✅ SUCCESS INDICATORS
+═══════════════════════════════════════════════════════════════════════════════
+
+You'll know it's working when:
+
+1. ✓ Production List appears in Manufacturing module
+2. ✓ You can create PL from Work Order
+3. ✓ PL shows items with balance quantities
+4. ✓ Stock Entry has "Production List" field
+5. ✓ Creating SE from PL (not BOM) works
+6. ✓ PL status updates after SE submission
+7. ✓ Balance quantities decrease after each transfer
+8. ✓ Status changes to "Completed" when balance = 0
+
+
+📞 SUPPORT
+═══════════════════════════════════════════════════════════════════════════════
+
+If you encounter issues:
+
+1. Check error logs: bench --site [site] console
+2. Verify all files were created by generator script
+3. Confirm migrations ran successfully
+4. Test each step of workflow independently
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                            END OF INSTALLATION GUIDE
+═══════════════════════════════════════════════════════════════════════════════

@@ -20,7 +20,11 @@ doc_events = {
     },
     "Stock Entry": {
         "validate": "c4factory.c4_manufacturing.stock_entry_hooks.set_wip_target_warehouse",
-        "on_submit": "c4factory.c4_manufacturing.stock_entry_hooks.on_submit_update_work_order_costing",
+        "on_submit": [
+            "c4factory.c4_manufacturing.stock_entry_hooks.on_submit_update_work_order_costing",
+            "c4factory.c4_manufacturing.production_list_hooks.update_production_list_on_stock_entry",
+        ],
+        "on_cancel": "c4factory.c4_manufacturing.production_list_hooks.update_production_list_on_stock_entry",
     },
 }
 
@@ -33,4 +37,5 @@ override_whitelisted_methods = {
 # Database patches for custom fields
 patches = [
     "c4factory.patches.v1_0.setup_work_order_custom_fields",
+    "c4factory.patches.v1_0.setup_stock_entry_custom_fields",
 ]
